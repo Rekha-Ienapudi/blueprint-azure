@@ -1,0 +1,120 @@
+name: Deploy Azure Container App (Interactive Login)
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscription_id:
+        description: "Azure Subscription ID"
+        required: true
+      usecase:
+        description: "Usecase name"
+        required: true
+      env:
+        description: "Environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - stage
+          - prod
+      owner:
+        description: "Owner"
+        required: true
+      location:
+        description: "Azure Region"
+        required: true
+        default: "westeurope"
+      image_name:
+        description: "Docker image name"
+        required: true
+        default: "flaskapp"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # ---------------------------------------------------------
+    # Install Terraform 1.5.7 (the last version that respects provider pins)
+    # ---------------------------------------------------------
+    - name: Install Terraform 1.5.7
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+        terraform_wrapper: false
+
+    # ---------------------------------------------------------
+    # Force Terraform 1.5.7 to override system Terraform 1.14.x
+    # ---------------------------------------------------------
+    - name: Override system Terraform
+      run: |
+        echo "$HOME/.terraform-bin" >> $GITHUB_PATH
+
+    # ---------------------------------------------------------
+    # Azure login (device code)
+    # ---------------------------------------------------------
+    - name: Azure CLI interactive login
+      run: |
+        echo "Login using device code:"
+        az login --use-device-code
+        az account set --subscription "${{ github.event.inputs.subscription_id }}"
+
+    # ---------------------------------------------------------
+    # Terraform Init (uses .terraform.lock.hcl → AzureRM 3.99.0)
+    # ---------------------------------------------------------
+    - name: Terraform Init
+      working-directory: infra
+      run: terraform init
+
+    # ---------------------------------------------------------
+    # Terraform Apply (deploy infra)
+    # ---------------------------------------------------------
+    - name: Terraform Apply
+      working-directory: infra
+      run: terraform apply -auto-approve \
+        -var "usecase=${{ github.event.inputs.usecase }}" \
+        -var "env=${{ github.event.inputs.env }}" \
+        -var "owner=${{ github.event.inputs.owner }}" \
+        -var "location=${{ github.event.inputs.location }}" \
+        -var "image_name=${{ github.event.inputs.image_name }}"
+
+    # ---------------------------------------------------------
+    # Get ACR login server
+    # ---------------------------------------------------------
+    - name: Get ACR Login Server
+      id: acr
+      working-directory: infra
+      run: echo "acr=$(terraform output -raw acr_login_server)" >> $GITHUB_OUTPUT
+
+    # ---------------------------------------------------------
+    # Login to ACR
+    # ---------------------------------------------------------
+    - name: ACR Login
+      run: az acr login --name ${{ steps.acr.outputs.acr }}
+
+    # ---------------------------------------------------------
+    # Build Docker image
+    # ---------------------------------------------------------
+    - name: Build Docker Image
+      working-directory: app
+      run: docker build -t ${{ steps.acr.outputs.acr }}/${{ github.event.inputs.image_name }}:latest .
+
+    # ---------------------------------------------------------
+    # Push Docker image
+    # ---------------------------------------------------------
+    - name: Push Docker Image
+      run: docker push ${{ steps.acr.outputs.acr }}/${{ github.event.inputs.image_name }}:latest
+
+    # ---------------------------------------------------------
+    # Update Container App to latest image
+    # ---------------------------------------------------------
+    - name: Update Container App
+      run: |
+        az containerapp update \
+          --name app-${{ github.event.inputs.usecase }}-${{ github.event.inputs.env }} \
+          --resource-group rg-${{ github.event.inputs.usecase }}-${{ github.event.inputs.env }}-${{ github.event.inputs.owner }} \
+          --image ${{ steps.acr.outputs.acr }}/${{ github.event.inputs.image_name }}:latest
