@@ -31,15 +31,18 @@ on:
         default: "flaskapp"
 
 jobs:
-  deploy:
+  plan:
     runs-on: ubuntu-latest
+
+    outputs:
+      tfplan-exists: ${{ steps.check-plan.outputs.plan_exists }}
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
     # ---------------------------------------------------------
-    # Install Terraform 1.5.7 (the last version that respects provider pins)
+    # Install Terraform 1.5.7
     # ---------------------------------------------------------
     - name: Install Terraform 1.5.7
       uses: hashicorp/setup-terraform@v3
@@ -48,14 +51,14 @@ jobs:
         terraform_wrapper: false
 
     # ---------------------------------------------------------
-    # Force Terraform 1.5.7 to override system Terraform 1.14.x
+    # Override system Terraform 1.14.x
     # ---------------------------------------------------------
     - name: Override system Terraform
       run: |
         echo "$HOME/.terraform-bin" >> $GITHUB_PATH
 
     # ---------------------------------------------------------
-    # Azure login (device code)
+    # Azure login
     # ---------------------------------------------------------
     - name: Azure CLI interactive login
       run: |
@@ -64,23 +67,102 @@ jobs:
         az account set --subscription "${{ github.event.inputs.subscription_id }}"
 
     # ---------------------------------------------------------
-    # Terraform Init (uses .terraform.lock.hcl → AzureRM 3.99.0)
+    # Terraform Init
     # ---------------------------------------------------------
     - name: Terraform Init
       working-directory: infra
       run: terraform init
 
     # ---------------------------------------------------------
-    # Terraform Apply (deploy infra)
+    # Terraform Plan
+    # ---------------------------------------------------------
+    - name: Terraform Plan
+      id: plan
+      working-directory: infra
+      run: |
+        terraform plan \
+          -out=tfplan \
+          -var="usecase=${{ github.event.inputs.usecase }}" \
+          -var="env=${{ github.event.inputs.env }}" \
+          -var="owner=${{ github.event.inputs.owner }}" \
+          -var="location=${{ github.event.inputs.location }}" \
+          -var="image_name=${{ github.event.inputs.image_name }}"
+
+    # ---------------------------------------------------------
+    # Check if plan file exists
+    # ---------------------------------------------------------
+    - name: Check plan file
+      id: check-plan
+      working-directory: infra
+      run: |
+        if [ -f "tfplan" ]; then
+          echo "plan_exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "plan_exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    # ---------------------------------------------------------
+    # Upload plan artifact for review
+    # ---------------------------------------------------------
+    - name: Upload Terraform Plan
+      uses: actions/upload-artifact@v4
+      with:
+        name: terraform-plan
+        path: infra/tfplan
+
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    if: needs.plan.outputs.tfplan-exists == 'true'
+    environment:
+      name: approval-required
+      url: https://github.com/${{ github.repository }}/actions
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # ---------------------------------------------------------
+    # Install Terraform 1.5.7
+    # ---------------------------------------------------------
+    - name: Install Terraform 1.5.7
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+        terraform_wrapper: false
+
+    # ---------------------------------------------------------
+    # Override system Terraform
+    # ---------------------------------------------------------
+    - name: Override system Terraform
+      run: |
+        echo "$HOME/.terraform-bin" >> $GITHUB_PATH
+
+    # ---------------------------------------------------------
+    # Azure login
+    # ---------------------------------------------------------
+    - name: Azure CLI interactive login
+      run: |
+        echo "Login using device code:"
+        az login --use-device-code
+        az account set --subscription "${{ github.event.inputs.subscription_id }}"
+
+    # ---------------------------------------------------------
+    # Download plan artifact
+    # ---------------------------------------------------------
+    - name: Download Terraform Plan
+      uses: actions/download-artifact@v4
+      with:
+        name: terraform-plan
+        path: infra
+
+    # ---------------------------------------------------------
+    # Terraform Apply (using approved plan)
     # ---------------------------------------------------------
     - name: Terraform Apply
       working-directory: infra
-      run: terraform apply -auto-approve \
-        -var "usecase=${{ github.event.inputs.usecase }}" \
-        -var "env=${{ github.event.inputs.env }}" \
-        -var "owner=${{ github.event.inputs.owner }}" \
-        -var "location=${{ github.event.inputs.location }}" \
-        -var "image_name=${{ github.event.inputs.image_name }}"
+      run: terraform apply -auto-approve tfplan
 
     # ---------------------------------------------------------
     # Get ACR login server
@@ -110,7 +192,7 @@ jobs:
       run: docker push ${{ steps.acr.outputs.acr }}/${{ github.event.inputs.image_name }}:latest
 
     # ---------------------------------------------------------
-    # Update Container App to latest image
+    # Update Container App
     # ---------------------------------------------------------
     - name: Update Container App
       run: |
