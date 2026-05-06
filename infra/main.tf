@@ -8,15 +8,18 @@ locals {
     }
   )
 }
+
 module "rg" {
-  source   = "../modules/resource-group"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+
   name     = "rg-${var.usecase}-${var.env}-${var.owner}"
   location = var.location
   tags     = local.standard_tags
 }
 
 module "acr" {
-  source              = "../modules/acr"
+  source = "git::https://github.com/<ORG>/<REPO>.git//modules/acr?ref=v1.0.0"
+
   name                = "acr${var.usecase}${var.env}${var.owner}"
   location            = var.location
   resource_group_name = module.rg.name
@@ -24,7 +27,8 @@ module "acr" {
 }
 
 module "cae" {
-  source              = "../modules/container-app-env"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+
   name                = "cae-${var.usecase}-${var.env}"
   location            = var.location
   resource_group_name = module.rg.name
@@ -32,7 +36,8 @@ module "cae" {
 }
 
 module "app" {
-  source              = "../modules/container-app"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+
   name                = "app-${var.usecase}-${var.env}"
   resource_group_name = module.rg.name
   environment_id      = module.cae.id
@@ -43,4 +48,16 @@ module "app" {
   registry_password  = module.acr.password
 
   tags = local.standard_tags
+}
+
+module "acr_pull" {
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+
+  scope        = module.acr.id
+  role         = "AcrPull"
+  principal_id = module.app.principal_id
+}
+
+output "acr_login_server" {
+  value = module.acr.login_server
 }
