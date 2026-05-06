@@ -1,0 +1,112 @@
+name: Deploy Azure Infra (Terraform Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      subscription_id:
+        description: "Azure Subscription ID"
+        required: true
+      usecase:
+        description: "Usecase name"
+        required: true
+      env:
+        description: "Environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - stage
+          - prod
+      owner:
+        description: "Owner"
+        required: true
+      location:
+        description: "Azure Region"
+        required: true
+        default: "westeurope"
+      image_name:
+        description: "Docker image name"
+        required: true
+        default: "flaskapp"
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install Terraform 1.5.7
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+        terraform_wrapper: false
+
+    - name: Override system Terraform
+      run: echo "$HOME/.terraform-bin" >> $GITHUB_PATH
+
+    - name: Azure CLI interactive login
+      run: |
+        echo "Login using device code:"
+        az login --use-device-code
+        az account set --subscription "${{ github.event.inputs.subscription_id }}"
+
+    - name: Terraform Init
+      working-directory: infra
+      run: terraform init
+
+    - name: Terraform Validate
+      working-directory: infra
+      run: terraform validate
+
+    - name: Terraform Plan
+      id: plan
+      working-directory: infra
+      run: terraform plan \
+        -var "usecase=${{ github.event.inputs.usecase }}" \
+        -var "env=${{ github.event.inputs.env }}" \
+        -var "owner=${{ github.event.inputs.owner }}" \
+        -var "location=${{ github.event.inputs.location }}" \
+        -var "image_name=${{ github.event.inputs.image_name }}" \
+        -var-file="tags.auto.tfvars"
+
+  terraform-apply:
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    environment:
+      name: manual-approval
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install Terraform 1.5.7
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+        terraform_wrapper: false
+
+    - name: Override system Terraform
+      run: echo "$HOME/.terraform-bin" >> $GITHUB_PATH
+
+    - name: Azure CLI interactive login
+      run: |
+        echo "Login using device code:"
+        az login --use-device-code
+        az account set --subscription "${{ github.event.inputs.subscription_id }}"
+
+    - name: Terraform Init
+      working-directory: infra
+      run: terraform init
+
+    - name: Terraform Apply (Manual Approval Required)
+      working-directory: infra
+      run: terraform apply -auto-approve \
+        -var "usecase=${{ github.event.inputs.usecase }}" \
+        -var "env=${{ github.event.inputs.env }}" \
+        -var "owner=${{ github.event.inputs.owner }}" \
+        -var "location=${{ github.event.inputs.location }}" \
+        -var "image_name=${{ github.event.inputs.image_name }}" \
+        -var-file="tags.auto.tfvars"
