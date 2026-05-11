@@ -2,6 +2,7 @@ name: Generate Workflow Inputs
 
 permissions:
   contents: write
+  workflows: write
 
 on:
   workflow_dispatch:
