@@ -1,0 +1,75 @@
+name: Deploy Azure Infra (Terraform Only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      # AUTO-GENERATED — DO NOT EDIT
+      {{INPUTS}}
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+        terraform_wrapper: false
+
+    - name: Azure CLI login
+      run: |
+        az login --use-device-code
+        az account set --subscription "${{ github.event.inputs.subscription_id }}"
+
+    - name: Build workflow.auto.tfvars
+      working-directory: infra
+      run: |
+        echo "Generating tfvars file"
+        > workflow.auto.tfvars
+
+        for key in $(echo '${{ toJson(github.event.inputs) }}' | jq -r 'keys[]'); do
+          value=$(echo '${{ toJson(github.event.inputs) }}' | jq -r --arg k "$key" '.[$k]')
+          echo "$key = \"$value\"" >> workflow.auto.tfvars
+        done
+
+        echo "Generated workflow.auto.tfvars:"
+        cat workflow.auto.tfvars
+
+    - name: Terraform Init
+      working-directory: infra
+      run: terraform init
+
+    - name: Terraform Plan
+      working-directory: infra
+      run: terraform plan -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
+
+  terraform-apply:
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    environment:
+      name: manual-approval
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.5.7
+        terraform_wrapper: false
+
+    - name: Azure CLI login
+      run: |
+        az login --use-device-code
+        az account set --subscription "${{ github.event.inputs.subscription_id }}"
+
+    - name: Terraform Init
+      working-directory: infra
+      run: terraform init
+
+    - name: Terraform Apply
+      working-directory: infra
+      run: terraform apply -auto-approve -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
