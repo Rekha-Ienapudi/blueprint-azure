@@ -2,15 +2,6 @@ name: Deploy Azure Infra (Terraform Only)
 
 on:
   workflow_dispatch:
-    inputs:
-      tf_vars:
-        description: |
-          Enter Terraform variables (key=value per line)
-          Example:
-          location=westeurope
-          environment=dev
-        required: false
-        type: string
 
 jobs:
   terraform:
@@ -57,17 +48,7 @@ jobs:
         echo "Generated schema:"
         cat schema.json
 
-    - name: Convert user input to JSON
-      working-directory: infra
-      run: |
-        echo "${{ github.event.inputs.tf_vars }}" | awk -F= '
-          NF==2 { printf "{\"%s\":\"%s\"}\n", $1, $2 }
-        ' > user.json
-
-        echo "User input JSON:"
-        cat user.json
-
-    - name: Build workflow.auto.tfvars
+    - name: Build workflow.auto.tfvars from defaults
       working-directory: infra
       run: |
         echo "" > workflow.auto.tfvars
@@ -77,17 +58,12 @@ jobs:
           type=$(echo "$line" | jq -r '.type')
           def=$(echo "$line" | jq -r '.default')
 
-          user_val=$(jq -r --arg n "$name" 'select(.[$n]) | .[$n]' user.json 2>/dev/null || echo "")
-
-          if [ -z "$user_val" ] && [ "$def" = "null" ]; then
-            echo "ERROR: Missing required variable: $name"
+          if [ "$def" = "null" ]; then
+            echo "ERROR: Missing required variable with no default: $name"
             exit 1
           fi
 
-          final_val="$user_val"
-          if [ -z "$final_val" ]; then
-            final_val="$def"
-          fi
+          final_val="$def"
 
           case "$type" in
             string)
