@@ -17,45 +17,9 @@ jobs:
         terraform_version: 1.5.7
         terraform_wrapper: false
 
-    - name: Install terraform-config-inspect
-      run: |
-        curl -L https://github.com/hashicorp/terraform-config-inspect/releases/download/v0.0.4/terraform-config-inspect_0.0.4_linux_amd64.zip -o tci.zip
-        unzip tci.zip
-        sudo mv terraform-config-inspect /usr/local/bin/
-
     - name: Azure CLI login
       run: |
         az login --use-device-code
-
-    - name: Parse variables.tf → schema.json
-      working-directory: infra
-      run: |
-        terraform-config-inspect --json . | jq '.variables' > schema.json
-
-        echo "Extracted variable schema:"
-        cat schema.json
-
-    - name: Build workflow.auto.tfvars from defaults
-      working-directory: infra
-      run: |
-        echo "" > workflow.auto.tfvars
-
-        jq -c 'to_entries[]' schema.json | while read entry; do
-          name=$(echo "$entry" | jq -r '.key')
-          type=$(echo "$entry" | jq -r '.value.type')
-          has_default=$(echo "$entry" | jq -r '.value | has("default")')
-          default_val=$(echo "$entry" | jq -r '.value.default // empty')
-
-          if [ "$has_default" = "false" ]; then
-            echo "ERROR: Missing required variable with no default: $name"
-            exit 1
-          fi
-
-          echo "$name = $default_val" >> workflow.auto.tfvars
-        done
-
-        echo "Generated workflow.auto.tfvars:"
-        cat workflow.auto.tfvars
 
     - name: Terraform Init
       working-directory: infra
@@ -63,9 +27,9 @@ jobs:
 
     - name: Terraform Plan
       working-directory: infra
-      run: terraform plan -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
+      run: terraform plan
 
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main'
       working-directory: infra
-      run: terraform apply -auto-approve -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
+      run: terraform apply -auto-approve
