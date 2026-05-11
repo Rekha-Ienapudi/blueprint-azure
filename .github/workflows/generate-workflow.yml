@@ -29,10 +29,9 @@ jobs:
           join("\n")
         ' inputs.json)
 
-        # Escape for sed
         ESCAPED_INPUTS=$(printf "%s" "$INPUTS" | sed -e 's/[\/&]/\\&/g')
 
-        sed "s/{{INPUTS}}/$ESCAPED_INPUTS/" .github/workflows/deploy-template.yml \
+        sed "s/{{INPUTS}}/$ESCAPED_INPUTS/" .github/deploy-template.yml \
           > .github/workflows/deploy.yml
 
     - name: Commit updated workflow
