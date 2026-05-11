@@ -29,10 +29,15 @@ jobs:
           join("\n")
         ' inputs.json)
 
-        ESCAPED_INPUTS=$(printf "%s" "$INPUTS" | sed -e 's/[\/&]/\\&/g')
-
-        sed "s/{{INPUTS}}/$ESCAPED_INPUTS/" .github/deploy-template.yml \
-          > .github/workflows/deploy.yml
+        awk -v repl="$INPUTS" '
+          {
+            if ($0 ~ /{{INPUTS}}/) {
+              print repl
+            } else {
+              print $0
+            }
+          }
+        ' .github/deploy-template.yml > .github/workflows/deploy.yml
 
     - name: Commit updated workflow
       run: |
