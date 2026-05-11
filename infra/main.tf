@@ -57,7 +57,3 @@ module "acr_pull" {
   role         = "AcrPull"
   principal_id = module.app.principal_id
 }
-
-output "acr_login_server" {
-  value = module.acr.login_server
-}
