@@ -1,54 +1,130 @@
-name: Build & Deploy App (After Infra)
+name: Deploy Azure Infra (Terraform Only)
 
 on:
-  workflow_run:
-    workflows: ["Deploy Azure Infra (Terraform Only)"]
-    types:
-      - completed
+  workflow_dispatch:
+    inputs:
+      tf_vars:
+        description: |
+          Enter Terraform variables (key=value per line)
+          Example:
+          location=westeurope
+          environment=dev
+        required: false
+        type: string
 
 jobs:
-  build-and-deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  terraform:
     runs-on: ubuntu-latest
 
     steps:
-    # ---------------------------------------------------------
-    # Checkout repo
-    # ---------------------------------------------------------
     - name: Checkout
       uses: actions/checkout@v4
 
-    # ---------------------------------------------------------
-    # Install Terraform 1.5.7 (to read outputs)
-    # ---------------------------------------------------------
-    - name: Install Terraform 1.5.7
+    - name: Install Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.5.7
         terraform_wrapper: false
 
-    - name: Override system Terraform
-      run: echo "$HOME/.terraform-bin" >> $GITHUB_PATH
-
-    # ---------------------------------------------------------
-    # Azure Login (interactive)
-    # ---------------------------------------------------------
-    - name: Azure CLI interactive login
+    - name: Azure CLI login
       run: |
-        echo "Login using device code:"
         az login --use-device-code
 
-    # ---------------------------------------------------------
-    # Terraform Init (to read outputs)
-    # ---------------------------------------------------------
+    - name: Parse variables.tf → schema.json
+      working-directory: infra
+      run: |
+        echo "Parsing variables.tf"
+
+        awk '
+          /variable "/ {
+            gsub(/"/, "", $2)
+            var=$2
+          }
+          /type *=/ {
+            sub(/.*type *= */, "")
+            type=$0
+          }
+          /default *=/ {
+            sub(/.*default *= */, "")
+            def=$0
+          }
+          /^}/ {
+            printf("{\"name\":\"%s\",\"type\":%s,\"default\":%s}\n", var, type, (def==""?"null":def))
+            var=""; type=""; def=""
+          }
+        ' variables.tf > schema.json
+
+        echo "Generated schema:"
+        cat schema.json
+
+    - name: Convert user input to JSON
+      working-directory: infra
+      run: |
+        echo "${{ github.event.inputs.tf_vars }}" | awk -F= '
+          NF==2 { printf "{\"%s\":\"%s\"}\n", $1, $2 }
+        ' > user.json
+
+        echo "User input JSON:"
+        cat user.json
+
+    - name: Build workflow.auto.tfvars
+      working-directory: infra
+      run: |
+        echo "" > workflow.auto.tfvars
+
+        while read line; do
+          name=$(echo "$line" | jq -r '.name')
+          type=$(echo "$line" | jq -r '.type')
+          def=$(echo "$line" | jq -r '.default')
+
+          user_val=$(jq -r --arg n "$name" 'select(.[$n]) | .[$n]' user.json 2>/dev/null || echo "")
+
+          if [ -z "$user_val" ] && [ "$def" = "null" ]; then
+            echo "ERROR: Missing required variable: $name"
+            exit 1
+          fi
+
+          final_val="$user_val"
+          if [ -z "$final_val" ]; then
+            final_val="$def"
+          fi
+
+          case "$type" in
+            string)
+              if ! echo "$final_val" | grep -q '^".*"$'; then
+                final_val="\"$final_val\""
+              fi
+              ;;
+            number)
+              if ! echo "$final_val" | grep -Eq '^[0-9]+$'; then
+                echo "ERROR: Variable $name must be a number"
+                exit 1
+              fi
+              ;;
+            bool)
+              if ! echo "$final_val" | grep -Eq '^(true|false)$'; then
+                echo "ERROR: Variable $name must be true or false"
+                exit 1
+              fi
+              ;;
+          esac
+
+          echo "$name = $final_val" >> workflow.auto.tfvars
+
+        done < schema.json
+
+        echo "Final workflow.auto.tfvars:"
+        cat workflow.auto.tfvars
+
     - name: Terraform Init
       working-directory: infra
       run: terraform init
 
-    # ---------------------------------------------------------
-    # Get ACR login server
-    # ---------------------------------------------------------
-    - name: Get ACR Login Server
-      id: acr
+    - name: Terraform Plan
       working-directory: infra
-      run: echo "acr=$(terraform
+      run: terraform plan -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
+
+    - name: Terraform Apply
+      if: github.ref == 'refs/heads/main'
+      working-directory: infra
+      run: terraform apply -auto-approve -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
