@@ -30,11 +30,9 @@ jobs:
         echo "Generating tfvars file"
         > workflow.auto.tfvars
 
-        for key in ${{ toJson(github.event.inputs) }}; do
-          name=$(echo $key | jq -r 'keys[0]')
-          value=$(echo $key | jq -r '.[keys[0]]')
-
-          echo "$name = \"$value\"" >> workflow.auto.tfvars
+        for key in $(echo '${{ toJson(github.event.inputs) }}' | jq -r 'keys[]'); do
+          value=$(echo '${{ toJson(github.event.inputs) }}' | jq -r --arg k "$key" '.[$k]')
+          echo "$key = \"$value\"" >> workflow.auto.tfvars
         done
 
         echo "Generated workflow.auto.tfvars:"
