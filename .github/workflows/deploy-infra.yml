@@ -21,86 +21,15 @@ jobs:
       run: |
         az login --use-device-code
 
-    - name: Parse variables.tf → schema.json
-      working-directory: infra
-      run: |
-        echo "Parsing variables.tf"
-
-        awk '
-          /variable "/ {
-            gsub(/"/, "", $2)
-            var=$2
-          }
-          /type *=/ {
-            sub(/.*type *= */, "")
-            type=$0
-          }
-          /default *=/ {
-            sub(/.*default *= */, "")
-            def=$0
-          }
-          /^}/ {
-            printf("{\"name\":\"%s\",\"type\":%s,\"default\":%s}\n", var, type, (def==""?"null":def))
-            var=""; type=""; def=""
-          }
-        ' variables.tf > schema.json
-
-        echo "Generated schema:"
-        cat schema.json
-
-    - name: Build workflow.auto.tfvars from defaults
-      working-directory: infra
-      run: |
-        echo "" > workflow.auto.tfvars
-
-        while read line; do
-          name=$(echo "$line" | jq -r '.name')
-          type=$(echo "$line" | jq -r '.type')
-          def=$(echo "$line" | jq -r '.default')
-
-          if [ "$def" = "null" ]; then
-            echo "ERROR: Missing required variable with no default: $name"
-            exit 1
-          fi
-
-          final_val="$def"
-
-          case "$type" in
-            string)
-              if ! echo "$final_val" | grep -q '^".*"$'; then
-                final_val="\"$final_val\""
-              fi
-              ;;
-            number)
-              if ! echo "$final_val" | grep -Eq '^[0-9]+$'; then
-                echo "ERROR: Variable $name must be a number"
-                exit 1
-              fi
-              ;;
-            bool)
-              if ! echo "$final_val" | grep -Eq '^(true|false)$'; then
-                echo "ERROR: Variable $name must be true or false"
-                exit 1
-              fi
-              ;;
-          esac
-
-          echo "$name = $final_val" >> workflow.auto.tfvars
-
-        done < schema.json
-
-        echo "Final workflow.auto.tfvars:"
-        cat workflow.auto.tfvars
-
     - name: Terraform Init
       working-directory: infra
       run: terraform init
 
     - name: Terraform Plan
       working-directory: infra
-      run: terraform plan -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
+      run: terraform plan
 
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main'
       working-directory: infra
-      run: terraform apply -auto-approve -var-file="workflow.auto.tfvars" -var-file="tags.auto.tfvars"
+      run: terraform apply -auto-approve
