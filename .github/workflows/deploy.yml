@@ -1,35 +1,54 @@
-name: Deploy Azure Infra (Terraform Only)
+name: Build & Deploy App (After Infra)
 
 on:
-  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy Azure Infra (Terraform Only)"]
+    types:
+      - completed
 
 jobs:
-  terraform:
+  build-and-deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
+    # ---------------------------------------------------------
+    # Checkout repo
+    # ---------------------------------------------------------
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Install Terraform
+    # ---------------------------------------------------------
+    # Install Terraform 1.5.7 (to read outputs)
+    # ---------------------------------------------------------
+    - name: Install Terraform 1.5.7
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.5.7
         terraform_wrapper: false
 
-    - name: Azure CLI login
+    - name: Override system Terraform
+      run: echo "$HOME/.terraform-bin" >> $GITHUB_PATH
+
+    # ---------------------------------------------------------
+    # Azure Login (interactive)
+    # ---------------------------------------------------------
+    - name: Azure CLI interactive login
       run: |
+        echo "Login using device code:"
         az login --use-device-code
 
+    # ---------------------------------------------------------
+    # Terraform Init (to read outputs)
+    # ---------------------------------------------------------
     - name: Terraform Init
       working-directory: infra
       run: terraform init
 
-    - name: Terraform Plan
+    # ---------------------------------------------------------
+    # Get ACR login server
+    # ---------------------------------------------------------
+    - name: Get ACR Login Server
+      id: acr
       working-directory: infra
-      run: terraform plan
-
-    - name: Terraform Apply
-      if: github.ref == 'refs/heads/main'
-      working-directory: infra
-      run: terraform apply -auto-approve
+      run: echo "acr=$(terraform
