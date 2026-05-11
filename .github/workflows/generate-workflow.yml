@@ -1,6 +1,7 @@
 name: Generate Workflow Inputs
 
 on:
+  workflow_dispatch:
   push:
     paths:
       - "infra/variables.tf"
@@ -22,13 +23,16 @@ jobs:
 
     - name: Build deploy.yml
       run: |
-        INPUTS=$(cat inputs.json | jq -r '
+        INPUTS=$(jq -r '
           to_entries |
           map("      \(.key):\n        description: \"\(.value.description)\"\n        required: \(.value.required)\n        type: string") |
           join("\n")
-        ')
+        ' inputs.json)
 
-        sed "s|{{INPUTS}}|$INPUTS|" .github/workflows/deploy-template.yml \
+        # Escape for sed
+        ESCAPED_INPUTS=$(printf "%s" "$INPUTS" | sed -e 's/[\/&]/\\&/g')
+
+        sed "s/{{INPUTS}}/$ESCAPED_INPUTS/" .github/workflows/deploy-template.yml \
           > .github/workflows/deploy.yml
 
     - name: Commit updated workflow
