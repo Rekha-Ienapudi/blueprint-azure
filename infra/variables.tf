@@ -1,15 +1,18 @@
 variable "usecase" {
   description = "Usecase name"
   type        = string
+  default     = "web-apitest"   # ✔ 3–20 chars, lowercase, alphanumeric + hyphens
 
   validation {
     condition     = can(regex("^[a-z0-9-]{3,20}$", var.usecase))
     error_message = "usecase must be 3–20 chars, lowercase alphanumeric or hyphens."
   }
 }
+
 variable "env" {
   description = "Environment"
   type        = string
+  default     = "dev"       # ✔ one of: dev, test, stage, prod
 
   validation {
     condition     = contains(["dev", "test", "stage", "prod"], var.env)
@@ -20,6 +23,7 @@ variable "env" {
 variable "owner" {
   description = "Owner"
   type        = string
+  default     = "rekha"   # ✔ 3–20 chars, lowercase, alphanumeric + hyphens
 
   validation {
     condition     = can(regex("^[a-z0-9-]{3,20}$", var.owner))
@@ -30,11 +34,13 @@ variable "owner" {
 variable "location" {
   description = "Azure region"
   type        = string
+  default     = "westeurope"   # ✔ valid Azure region
 }
 
 variable "image_name" {
   description = "Docker image name"
   type        = string
+  default     = "myapp-rekha_v1"   # ✔ 3–50 chars, lowercase, alphanumeric, hyphens, underscores
 
   validation {
     condition     = can(regex("^[a-z0-9-_]{3,50}$", var.image_name))
@@ -44,7 +50,12 @@ variable "image_name" {
 
 variable "tags" {
   description = "Standard tags for all resources"
-  type = map(string)
+  type        = map(string)
+  default = {
+    project = "blueprint"
+    owner   = "rekha"
+    cost    = "shared"
+  }   # ✔ all values non-empty
 
   validation {
     condition     = alltrue([for k, v in var.tags : length(v) > 0])
