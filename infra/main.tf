@@ -18,7 +18,7 @@ module "rg" {
 }
 
 module "acr" {
-  source = "git::https://github.com/<ORG>/<REPO>.git//acr"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git//acr"
 
   name                = "acr${var.usecase}${var.env}${var.owner}"
   location            = var.location
