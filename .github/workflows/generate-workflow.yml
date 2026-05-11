@@ -1,5 +1,8 @@
 name: Generate Workflow Inputs
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:
@@ -45,4 +48,5 @@ jobs:
         git config user.email "github-actions@github.com"
         git add .github/workflows/deploy.yml
         git commit -m "Auto-update workflow inputs from variables.tf" || echo "No changes"
-        git push
+
+        git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:${{ github.ref_name }}
