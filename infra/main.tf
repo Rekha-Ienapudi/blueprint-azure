@@ -10,7 +10,7 @@ locals {
 }
 
 module "rg" {
-  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git//resource-group"
 
   name     = "rg-${var.usecase}-${var.env}-${var.owner}"
   location = var.location
@@ -18,7 +18,7 @@ module "rg" {
 }
 
 module "acr" {
-  source = "git::https://github.com/<ORG>/<REPO>.git//modules/acr?ref=v1.0.0"
+  source = "git::https://github.com/<ORG>/<REPO>.git//acr"
 
   name                = "acr${var.usecase}${var.env}${var.owner}"
   location            = var.location
@@ -27,7 +27,7 @@ module "acr" {
 }
 
 module "cae" {
-  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git//container-app-env"
 
   name                = "cae-${var.usecase}-${var.env}"
   location            = var.location
@@ -36,7 +36,7 @@ module "cae" {
 }
 
 module "app" {
-  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git//container-app"
 
   name                = "app-${var.usecase}-${var.env}"
   resource_group_name = module.rg.name
@@ -51,7 +51,7 @@ module "app" {
 }
 
 module "acr_pull" {
-  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git"
+  source = "git::https://github.com/Rekha-Ienapudi/terraform-modules.git//role-assignment"
 
   scope        = module.acr.id
   role         = "AcrPull"
