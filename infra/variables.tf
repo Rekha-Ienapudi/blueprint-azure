@@ -7,7 +7,6 @@ variable "usecase" {
     error_message = "usecase must be 3–20 chars, lowercase alphanumeric or hyphens."
   }
 }
-
 variable "env" {
   description = "Environment"
   type        = string
