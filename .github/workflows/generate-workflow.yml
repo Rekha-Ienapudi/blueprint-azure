@@ -1,0 +1,40 @@
+name: Generate Workflow Inputs
+
+on:
+  push:
+    paths:
+      - "infra/variables.tf"
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Python HCL2 parser
+      run: pip install python-hcl2 jq
+
+    - name: Parse variables.tf → JSON
+      run: |
+        python .github/scripts/generate-workflow.py > inputs.json
+        cat inputs.json
+
+    - name: Build deploy.yml
+      run: |
+        INPUTS=$(cat inputs.json | jq -r '
+          to_entries |
+          map("      \(.key):\n        description: \"\(.value.description)\"\n        required: \(.value.required)\n        type: string") |
+          join("\n")
+        ')
+
+        sed "s|{{INPUTS}}|$INPUTS|" .github/workflows/deploy-template.yml \
+          > .github/workflows/deploy.yml
+
+    - name: Commit updated workflow
+      run: |
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+        git add .github/workflows/deploy.yml
+        git commit -m "Auto-update workflow inputs from variables.tf" || echo "No changes"
+        git push
