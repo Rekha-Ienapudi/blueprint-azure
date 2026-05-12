@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Azure Provisioning App</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+<div class="layout">
+
+    <!-- ================= SIDEBAR ================= -->
+    <div class="sidebar">
+        <h3>☁ Azure Provisioning App</h3>
+
+        <div class="nav">Deploy</div>
+        <div class="nav">Resources</div>
+        <div class="nav">Logs</div>
+        <div class="nav">RG Dashboard</div>
+    </div>
+
+    <!-- ================= MAIN ================= -->
+    <div class="main">
+
+        <h2>Azure Provisioning Control Plane</h2>
+        <p class="subtext">Deploy and manage Azure resources with governance controls</p>
+
+        <!-- ================= FORM ================= -->
+        <form id="deployForm">
+
+            <div class="section-title">Authentication</div>
+
+            <label>Subscription ID *</label>
+            <input name="subscription_id" required placeholder="Azure Subscription ID">
+
+            <div class="section-title">Application Details</div>
+
+            <label>Use Case *</label>
+            <input name="usecase" required placeholder="e.g. payments-api">
+
+            <label>Owner Name *</label>
+            <input name="owner" required placeholder="e.g. platform-team">
+
+            <label>Owner Email (Policy Required) *</label>
+            <input name="owner_email" type="email" required placeholder="team@company.com">
+
+            <label>Environment *</label>
+            <select name="env">
+                <option>dev</option>
+                <option>test</option>
+                <option>stage</option>
+                <option>prod</option>
+            </select>
+
+            <label>Region *</label>
+            <select name="location">
+                <option>westeurope</option>
+                <option>northeurope</option>
+                <option>eastus</option>
+            </select>
+
+            <div class="section-title">Storage</div>
+
+            <label>Storage Tier *</label>
+            <select name="storage_tier">
+                <option>Standard_LRS</option>
+                <option>Standard_GRS</option>
+                <option>Standard_ZRS</option>
+            </select>
+
+            <div class="section-title">Container Registry</div>
+
+            <label>ACR SKU *</label>
+            <select name="acr_sku">
+                <option>Basic</option>
+                <option>Standard</option>
+                <option>Premium</option>
+            </select>
+
+            <button type="submit">Deploy Infrastructure</button>
+
+        </form>
+
+        <!-- ================= PROGRESS ================= -->
+        <div id="progressBar">
+            <div id="bar"></div>
+        </div>
+
+        <!-- ================= LOGS ================= -->
+        <h3>Activity Logs</h3>
+        <pre id="logs"></pre>
+
+        <!-- ================= RESOURCE TABLE ================= -->
+        <h3>Resources</h3>
+
+        <table id="resourceTable"></table>
+
+        <!-- ================= RG DASHBOARD ================= -->
+        <h3>Resource Groups (Created by this App)</h3>
+
+        <button onclick="loadRGs()">Refresh RGs</button>
+
+        <table id="rgTable"></table>
+
+    </div>
+</div>
+
+<script>
+
+let job = "";
+
+/* ================= START DEPLOY ================= */
+document.getElementById("deployForm").onsubmit = async (e) => {
+    e.preventDefault();
+
+    let res = await fetch("/start", {
+        method: "POST",
+        body: new FormData(e.target)
+    });
+
+    let data = await res.json();
+    job = data.job_id;
+
+    poll();
+};
+
+
+/* ================= POLL JOB STATUS ================= */
+async function poll() {
+
+    let res = await fetch("/status/" + job);
+    let data = await res.json();
+
+    // progress bar
+    document.getElementById("bar").style.width = (data.progress || 0) + "%";
+
+    // logs
+    document.getElementById("logs").innerText =
+        (data.logs || []).map(l => l.time + " - " + l.msg).join("\n");
+
+    // resources table
+    let html = `
+        <tr>
+            <th>Type</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Action</th>
+        </tr>
+    `;
+
+    (data.resources || []).forEach(r => {
+
+        html += `
+        <tr>
+            <td>${r.type}</td>
+            <td>${r.name}</td>
+            <td>${r.status}</td>
+            <td>
+                ${r.status === "FAILED"
+                    ? `<button onclick="retry('${r.type}','${r.name}')">Retry</button>`
+                    : "-"
+                }
+            </td>
+        </tr>`;
+    });
+
+    document.getElementById("resourceTable").innerHTML = html;
+
+    if (data.status !== "DONE" && data.status !== "FAILED") {
+        setTimeout(poll, 2000);
+    }
+}
+
+
+/* ================= RETRY FAILED RESOURCE ================= */
+async function retry(type, name) {
+
+    await fetch("/retry", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            job_id: job,
+            type: type,
+            name: name,
+            subscription: document.querySelector("[name='subscription_id']").value
+        })
+    });
+
+    poll();
+}
+
+
+/* ================= LOAD RG DASHBOARD ================= */
+async function loadRGs() {
+
+    let res = await fetch("/rgs");
+    let data = await res.json();
+
+    let html = `
+        <tr>
+            <th>Resource Group</th>
+            <th>Created Time</th>
+            <th>Action</th>
+        </tr>
+    `;
+
+    Object.keys(data).forEach(rg => {
+
+        html += `
+        <tr>
+            <td>${rg}</td>
+            <td>${data[rg].time}</td>
+            <td>
+                <button onclick="deleteRG('${rg}')">Delete</button>
+            </td>
+        </tr>`;
+    });
+
+    document.getElementById("rgTable").innerHTML = html;
+}
+
+
+/* ================= DELETE RG ================= */
+async function deleteRG(rg) {
+
+    let sub = document.querySelector("[name='subscription_id']").value;
+
+    await fetch("/delete_rg", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+            rg: rg,
+            subscription: sub
+        })
+    });
+
+    loadRGs();
+}
+
+
+/* initial load */
+loadRGs();
+
+</script>
+
+</body>
+</html>
+
+<!-- ================= SIDEBAR NAV FIX (NO CHANGES ABOVE) ================= -->
+<script>
+(function () {
+
+    function showView(view) {
+
+        const deploy = document.getElementById("deployForm")?.parentElement;
+        const logs = document.getElementById("logs")?.parentElement;
+        const resources = document.getElementById("resourceTable")?.parentElement;
+        const rg = document.getElementById("rgTable")?.parentElement;
+
+        if (!deploy || !logs || !resources || !rg) return;
+
+        deploy.style.display = "none";
+        logs.style.display = "none";
+        resources.style.display = "none";
+        rg.style.display = "none";
+
+        if (view === "deploy") deploy.style.display = "block";
+        if (view === "resources") resources.style.display = "block";
+        if (view === "logs") logs.style.display = "block";
+        if (view === "rg") rg.style.display = "block";
+    }
+
+    document.addEventListener("DOMContentLoaded", function () {
+
+        const navs = document.querySelectorAll(".nav");
+
+        if (navs.length >= 4) {
+            navs[0].onclick = () => showView("deploy");
+            navs[1].onclick = () => showView("resources");
+            navs[2].onclick = () => showView("logs");
+            navs[3].onclick = () => showView("rg");
+        }
+
+    });
+
+})();
+</script>
