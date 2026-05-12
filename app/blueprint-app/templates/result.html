@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deployment Result</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+<div class="layout">
+
+    <div class="sidebar">
+        <div class="logo">☁ Azure Portal</div>
+        <div class="nav">
+            <div class="nav-item active">Results</div>
+        </div>
+    </div>
+
+    <div class="main">
+
+        <div class="header">
+            <h2>Deployment Results</h2>
+            <p>{{ usecase }} | {{ env }} | {{ owner }}</p>
+        </div>
+
+        <div class="card">
+
+            <table class="azure-table">
+                <thead>
+                    <tr>
+                        <th>Resource</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                {% for r in results %}
+                    <tr>
+                        <td>{{ r.type }}</td>
+                        <td>{{ r.name }}</td>
+
+                        <td class="{{ r.status }}">
+                            {{ r.status }}
+                        </td>
+
+                        <td>{{ r.message }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+
+            </table>
+
+        </div>
+
+        <a href="/" class="back-link">← Back to Deploy</a>
+
+    </div>
+
+</div>
+
+</body>
+</html>
